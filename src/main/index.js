@@ -3,6 +3,7 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { exec } from 'child_process'
 import { WebSocketServer } from 'ws'
+import iconPath from '../renderer/src/assets/sword.png?asset'
 
 const systemProcesses = [
   'svchost.exe', 'conhost.exe', 'runtimebroker.exe', 'smss.exe',
@@ -83,7 +84,6 @@ app.whenReady().then(() => {
     });
   });
 
-  const iconPath = join(__dirname, '../../src/renderer/src/assets/sword.png');
   let trayIcon = nativeImage.createFromPath(iconPath);
   if (!trayIcon.isEmpty()) trayIcon = trayIcon.resize({ width: 24, height: 24 });
   tray = new Tray(trayIcon.isEmpty() ? nativeImage.createEmpty() : trayIcon);

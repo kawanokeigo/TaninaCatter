@@ -43,3 +43,6 @@ npm run dev
 npm run build:win
 
 distの中に.exeができてるはず
+
+chrome対応
+拡張機能を管理　パッケージ化されていない拡張機能を読み込む　から読み込んでね
