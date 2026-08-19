@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "TaskKill Remote Link",
+  "version": "1.0",
+  "description": "Electronアプリと連携してタブをキルする拡張機能",
+  "permissions": ["tabs"],
+  "background": {
+    "service_worker": "background.js"
+  }
+}
