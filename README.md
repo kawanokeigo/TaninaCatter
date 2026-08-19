@@ -34,3 +34,10 @@ src/
  └─ renderer/       # 画面側の処理 (React)
      ├─ App.jsx     # メインロジック (BLE通信や状態の管理)
      └─ components/ # 画面のパーツ (接続ボタン、リスト、刀、設定画面)
+
+# 開発モードで動作チェック（必要であれば）
+npm run dev
+# インストーラーや実行ファイル(.exe)を生成する
+npm run build:win
+
+distの中に.exeができてるはず
