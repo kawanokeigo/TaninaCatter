@@ -9,7 +9,7 @@ export default function BlacklistModal({
       onMouseMove={(e) => e.stopPropagation()}
       className="hide-scrollbar"
       style={{
-        position: 'absolute', top: '-260px', right: '-5px', width: '250px', height: '240px',
+        position: 'absolute', top: '-225px', right: '-10px', width: '230px', height: '240px',
         background: 'rgba(255, 255, 255, 0.98)', border: '4px solid #444', borderRadius: '12px',
         padding: '12px', display: 'flex', flexDirection: 'column', zIndex: 20,
         boxShadow: '0 8px 16px rgba(0,0,0,0.3)', WebkitAppRegion: 'no-drag'
