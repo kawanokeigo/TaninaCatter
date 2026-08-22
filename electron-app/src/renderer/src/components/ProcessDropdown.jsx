@@ -44,6 +44,7 @@ export default function ProcessDropdown({
     >
       {/* 未選択 */}
       <div
+        className={selectedProcess === '' ? 'active-item' : ''}
         onClick={() => onSelect('')}
         style={{
           padding: '8px 12px',
@@ -83,6 +84,7 @@ export default function ProcessDropdown({
           return (
             <div
               key={idx}
+              className={isSelected ? 'active-item' : ''}
               onClick={() => onSelect(p)}
               style={{
                 padding: '8px 12px',

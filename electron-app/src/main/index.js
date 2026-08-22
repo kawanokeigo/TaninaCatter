@@ -78,6 +78,7 @@ app.whenReady().then(() => {
     webContents.on('select-bluetooth-device', (event, deviceList, callback) => {
       event.preventDefault();
       const m5Device = deviceList.find(d => d.deviceName === 'M5-TaskKill-BLE');
+      // 見つかった時だけ接続する。見つからない場合は callback を呼ばずに探し続ける！
       if (m5Device) {
         callback(m5Device.deviceId);
       }
