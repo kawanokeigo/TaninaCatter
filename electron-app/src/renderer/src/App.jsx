@@ -14,7 +14,7 @@ function App() {
   const [processList, setProcessList] = useState([]);
   const [selectedProcess, setSelectedProcess] = useState('');
   const [isConn, setIsConn] = useState(false);
-  const [m5Mode, setM5Mode] = useState('SAFE');
+  const [m5Mode, setM5Mode] = useState('未接続'); // 初期値を未接続に変更
   const [targetMode, setTargetMode] = useState('process');
   const [isAttacking, setIsAttacking] = useState(false);
 
@@ -88,8 +88,16 @@ function App() {
   }, [selectedProcess, m5Mode, isConn]);
 
   const connectBLE = async () => {
+    // 連続クリック防止
+    if (isConn || m5Mode === '検索中...' || m5Mode === '接続中...') return;
+
+    setIsConn(false);
+    setM5Mode('検索中...');
+
     try {
       const device = await navigator.bluetooth.requestDevice({ filters: [{ name: 'M5-TaskKill-BLE' }], optionalServices: [SERVICE_UUID] });
+      setM5Mode('接続中...');
+
       device.addEventListener('gattserverdisconnected', () => { handleDisconnect(); });
 
       const server = await device.gatt.connect();
@@ -97,27 +105,51 @@ function App() {
       const characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
 
       await characteristic.startNotifications();
+
+      let pingCount = 0; // 本物の通信回数を数えるカウンター
+
       characteristic.addEventListener('characteristicvaluechanged', (event) => {
-        handleCommand(new TextDecoder().decode(event.target.value).trim());
+        const cmd = new TextDecoder().decode(event.target.value).trim();
+
+        // 正しいコマンドかどうかチェック
+        if (['0', '1', '2', 'U', 'D', 'K', 'L'].includes(cmd)) {
+          pingCount++;
+          // Windowsの嘘キャッシュ（1回だけ届く）を弾くため、2回連続で来たら本物と認める！
+          if (pingCount >= 2) {
+            handleCommand(cmd);
+          }
+        }
       });
 
-      setIsConn(true);
-      resetDisconnectTimer();
-
-      try {
-        const initialValue = await characteristic.readValue();
-        const initialCommand = new TextDecoder().decode(initialValue).trim();
-        if (['0', '1', '2'].includes(initialCommand)) handleCommand(initialCommand);
-        else setM5Mode('SAFE');
-      } catch { setM5Mode('SAFE'); }
+      // 4秒待っても本物の通信が2回届かない場合は、ゴースト接続とみなして強制切断
+      setTimeout(() => {
+        if (pingCount < 2) {
+          handleDisconnect();
+          alert("【通信エラー（ゴースト接続）】\nM5StickCの電源が入っていないか、応答がありません。\n\n※PCが過去の接続を勘違いしているため、WindowsのBluetooth設定から「デバイスの削除」を行ってください。");
+        }
+      }, 4000);
 
     } catch (error) {
-      alert(`【接続エラー】\n${error.message}\n\n※一度WindowsのBluetooth設定から「デバイスの削除」をしてアプリを再起動してください。`);
+      console.error('BLE Connection Error:', error);
+
+      if (!error.message.includes('cancelled') && !error.message.includes('User cancelled')) {
+        alert(
+          "【Bluetooth接続エラー】\n" +
+          "M5StickCとの通信を確立できませんでした。\n\n" +
+          "▼ 考えられる原因\n" +
+          "・デバイスの電源が入っていない\n" +
+          "・PCのBluetooth設定でペアリングの再解除が必要\n\n" +
+          `（システムコード: ${error.message}）`
+        );
+      }
+      handleDisconnect();
     }
   };
 
   const handleCommand = (command) => {
-    setIsConn(true); resetDisconnectTimer();
+    setIsConn(true);
+    resetDisconnectTimer();
+
     const fullList = ['', ...processListRef.current];
     const currentTarget = targetProcessRef.current;
     const currentIndex = fullList.indexOf(currentTarget);
@@ -133,11 +165,12 @@ function App() {
 
   const resetDisconnectTimer = () => {
     if (disconnectTimerRef.current) clearTimeout(disconnectTimerRef.current);
-    disconnectTimerRef.current = setTimeout(() => { handleDisconnect(); }, 2500);
+    disconnectTimerRef.current = setTimeout(() => { handleDisconnect(); }, 4000);
   };
 
   const handleDisconnect = () => {
-    setIsConn(false); setM5Mode('SAFE');
+    setIsConn(false);
+    setM5Mode('未接続'); // 強制的に未接続に戻し、ずっとSAFEになるのを防ぐ
     if (disconnectTimerRef.current) clearTimeout(disconnectTimerRef.current);
   };
 
@@ -167,8 +200,16 @@ function App() {
     else setBrowserBlacklist(browserBlacklist.filter(n => n !== name));
   };
 
-  const getDisplayText = () => { return !isConn ? '未接続' : m5Mode; };
+  const getDisplayText = () => {
+    if (!isConn) {
+      if (m5Mode === '検索中...' || m5Mode === '接続中...') return m5Mode;
+      return '未接続';
+    }
+    return m5Mode;
+  };
+
   const getBoxColor = () => {
+    if (m5Mode === '検索中...' || m5Mode === '接続中...') return '#ffb300';
     if (!isConn) return '#6b6b6b';
     if (m5Mode === 'SAFE') return '#4caf50';
     if (m5Mode === 'SELECT') return '#2196f3';
