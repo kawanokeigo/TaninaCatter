@@ -24,14 +24,27 @@ function connect() {
 
   // Electron側から「このタブをキルして！」と命令が来た時の処理
   ws.onmessage = (event) => {
-    const data = event.data;
-    if (data.startsWith('KILL_TAB:')) {
-      const tabId = parseInt(data.split(':')[1], 10);
-      chrome.tabs.remove(tabId, () => {
-        console.log(`💥 タブ(ID: ${tabId})をキルしました`);
-      });
-    }
-  };
+  const message = event.data;
+
+  // ======== ★ ここを追加 ========
+  if (message.startsWith('ACTIVATE_TAB:')) {
+    const tabId = parseInt(message.split(':')[1]);
+    
+    // 1. 指定されたタブをアクティブ（表示状態）にする
+    chrome.tabs.update(tabId, { active: true }, (tab) => {
+      if (tab && tab.windowId) {
+        // 2. そのタブが含まれるChromeのウィンドウ自体を最前面に引っ張り出す
+        chrome.windows.update(tab.windowId, { focused: true });
+      }
+    });
+  } 
+  // ===============================
+  
+  else if (message.startsWith('KILL_TAB:')) {
+    const tabId = parseInt(message.split(':')[1]);
+    chrome.tabs.remove(tabId);
+  }
+};
 
   ws.onclose = () => {
     console.log('❌ 切断されました。3秒後に再接続します...');
