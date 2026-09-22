@@ -341,7 +341,12 @@ function App() {
           <ConnectBubble isConn={isConn} onClick={connectBLE} boxColor={getBoxColor()} displayText={getDisplayText()} />
           <Sword isAttacking={isAttacking} />
           <MainBox selectedProcess={selectedProcess} targetMode={targetMode} />
+
+
+          {/* これデバッグ用の仮想m5出してるやつやからm5あるならコメントアウトしてね */}
           <VirtualM5Controller onCommand={handleCommand} isConn={isConn} />
+
+
         </div>
       </div>
     </>
