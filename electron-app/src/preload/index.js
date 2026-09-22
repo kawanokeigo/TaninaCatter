@@ -11,12 +11,15 @@ const api = {
   onTargetModeChanged: (callback) => ipcRenderer.on('target-mode-changed', (_, mode) => callback(mode)),
   showContextMenu: () => ipcRenderer.invoke('show-context-menu'),
 
-  // ★ 追加：裏側からメニューをクリックされた通知を受け取る
+  // 裏側からメニューをクリックされた通知を受け取る
   onOpenBlacklist: (callback) => ipcRenderer.on('open-blacklist', () => callback()),
 
   onBtStatus: (callback) => ipcRenderer.on('bt-status', (_, status) => callback(status)),
   onBtMode: (callback) => ipcRenderer.on('bt-mode', (_, mode) => callback(mode)),
-  onBtCommand: (callback) => ipcRenderer.on('bt-command', (_, cmd) => callback(cmd))
+  onBtCommand: (callback) => ipcRenderer.on('bt-command', (_, cmd) => callback(cmd)),
+
+  // ★ 追加：マウスイベントの透過（クリックスルー）を切り替えるAPI
+  setIgnoreMouseEvents: (ignore, options) => ipcRenderer.send('set-ignore-mouse-events', ignore, options)
 }
 
 if (process.contextIsolated) {

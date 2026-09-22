@@ -68,6 +68,7 @@ export default function MainBox({ selectedProcess, targetMode }) {
               objectFit: 'fill',
               left: 0,
               top: 0,
+              transform: 'scaleX(1.3)',
             }}
           />
 
@@ -75,8 +76,8 @@ export default function MainBox({ selectedProcess, targetMode }) {
           <div
             style={{
               position: 'absolute',
-              left: '10px',
-              right: '10px',
+              left: '15px',
+              right: '15px',
               top: '5px',
               bottom: '5px',
 
@@ -85,18 +86,23 @@ export default function MainBox({ selectedProcess, targetMode }) {
               justifyContent: 'center',
 
               color: '#000',
-              fontSize: selectedProcess ? '17px' : '18px',
+              fontSize: '15px',
               fontWeight: '900',
 
+              // ★ ここを確実に ellipsis が効く設定にする
               whiteSpace: 'nowrap',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
+              width: 'calc(100% - 30px)', // 左右の余白を除いた幅を固定
 
               textAlign: 'center',
               letterSpacing: '1px',
             }}
           >
-            {selectedProcess || '未選択'}
+            {/* ★ spanに直接太字を指定 */}
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: '900' }}>
+              {selectedProcess || '未選択'}
+            </span>
           </div>
         </div>
 

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 
 // ★ 作成したコンポーネントをインポート
+import VirtualM5Controller from './components/VirtualM5Controller';
 import BlacklistModal from './components/BlacklistModal';
 import ProcessDropdown from './components/ProcessDropdown';
 import ConnectBubble from './components/ConnectBubble';
@@ -14,7 +15,7 @@ function App() {
   const [processList, setProcessList] = useState([]);
   const [selectedProcess, setSelectedProcess] = useState('');
   const [isConn, setIsConn] = useState(false);
-  const [m5Mode, setM5Mode] = useState('未接続'); // 初期値を未接続に変更
+  const [m5Mode, setM5Mode] = useState('未接続');
   const [targetMode, setTargetMode] = useState('process');
   const [isAttacking, setIsAttacking] = useState(false);
 
@@ -38,6 +39,27 @@ function App() {
 
   const browserBlacklistRef = useRef(browserBlacklist);
   browserBlacklistRef.current = browserBlacklist;
+
+  // ★ 起動時にウィンドウ全体を「マウス透過（クリックを裏に通す）」に初期設定する
+  useEffect(() => {
+    if (window.api && window.api.setIgnoreMouseEvents) {
+      window.api.setIgnoreMouseEvents(true, { forward: true });
+    }
+  }, []);
+
+  // UIにマウスが乗ったときはクリックできるようにする
+  const handleMouseEnterUI = () => {
+    if (window.api && window.api.setIgnoreMouseEvents) {
+      window.api.setIgnoreMouseEvents(false);
+    }
+  };
+
+  // UIからマウスが外れたら再びクリックを裏にスルーさせる
+  const handleMouseLeaveUI = () => {
+    if (window.api && window.api.setIgnoreMouseEvents) {
+      window.api.setIgnoreMouseEvents(true, { forward: true });
+    }
+  };
 
   useEffect(() => { localStorage.setItem('processBlacklist', JSON.stringify(processBlacklist)); }, [processBlacklist]);
   useEffect(() => { localStorage.setItem('browserBlacklist', JSON.stringify(browserBlacklist)); }, [browserBlacklist]);
@@ -88,7 +110,6 @@ function App() {
   }, [selectedProcess, m5Mode, isConn]);
 
   const connectBLE = async () => {
-    // 連続クリック防止
     if (isConn || m5Mode === '検索中...' || m5Mode === '接続中...') return;
 
     setIsConn(false);
@@ -106,41 +127,29 @@ function App() {
 
       await characteristic.startNotifications();
 
-      let pingCount = 0; // 本物の通信回数を数えるカウンター
+      let pingCount = 0;
 
       characteristic.addEventListener('characteristicvaluechanged', (event) => {
         const cmd = new TextDecoder().decode(event.target.value).trim();
-
-        // 正しいコマンドかどうかチェック
         if (['0', '1', '2', 'U', 'D', 'K', 'L'].includes(cmd)) {
           pingCount++;
-          // Windowsの嘘キャッシュ（1回だけ届く）を弾くため、2回連続で来たら本物と認める！
           if (pingCount >= 2) {
             handleCommand(cmd);
           }
         }
       });
 
-      // 4秒待っても本物の通信が2回届かない場合は、ゴースト接続とみなして強制切断
       setTimeout(() => {
         if (pingCount < 2) {
           handleDisconnect();
-          alert("【通信エラー（ゴースト接続）】\nM5StickCの電源が入っていないか、応答がありません。\n\n※PCが過去の接続を勘違いしているため、WindowsのBluetooth設定から「デバイスの削除」を行ってください。");
+          alert("【通信エラー（ゴースト接続）】\nM5StickCの電源が入っていないか、応答がありません。");
         }
       }, 4000);
 
     } catch (error) {
       console.error('BLE Connection Error:', error);
-
       if (!error.message.includes('cancelled') && !error.message.includes('User cancelled')) {
-        alert(
-          "【Bluetooth接続エラー】\n" +
-          "M5StickCとの通信を確立できませんでした。\n\n" +
-          "▼ 考えられる原因\n" +
-          "・デバイスの電源が入っていない\n" +
-          "・PCのBluetooth設定でペアリングの再解除が必要\n\n" +
-          `（システムコード: ${error.message}）`
-        );
+        alert(`【Bluetooth接続エラー】\n${error.message}`);
       }
       handleDisconnect();
     }
@@ -170,7 +179,7 @@ function App() {
 
   const handleDisconnect = () => {
     setIsConn(false);
-    setM5Mode('未接続'); // 強制的に未接続に戻し、ずっとSAFEになるのを防ぐ
+    setM5Mode('未接続');
     if (disconnectTimerRef.current) clearTimeout(disconnectTimerRef.current);
   };
 
@@ -238,11 +247,17 @@ function App() {
         .connect-btn:active { transform: scale(0.95); opacity: 0.8; }
       `}</style>
 
+      {/* 外側の背景領域は完全にマウスイベントをスルーする */}
       <div
         onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp} onContextMenu={handleContextMenu}
         style={{ position: 'relative', width: '100vw', height: '100vh', display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end', padding: '20px', fontFamily: '"Yu Gothic", "Meiryo", sans-serif' }}
       >
-        <div style={{ position: 'relative', width: '260px', height: '170px' }}>
+        {/* ★ この内部のUIエリアにマウスが入ったときだけ、クリックを有効にする */}
+        <div
+          onMouseEnter={handleMouseEnterUI}
+          onMouseLeave={handleMouseLeaveUI}
+          style={{ position: 'relative', width: '260px', height: '170px' }}
+        >
 
           <BlacklistModal
             isOpen={isBlacklistOpen}
@@ -274,6 +289,11 @@ function App() {
           <MainBox
             selectedProcess={selectedProcess}
             targetMode={targetMode}
+          />
+
+          <VirtualM5Controller
+            onCommand={handleCommand}
+            isConn={isConn}
           />
 
         </div>
