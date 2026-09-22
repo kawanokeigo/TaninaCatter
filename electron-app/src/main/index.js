@@ -149,6 +149,13 @@ app.whenReady().then(() => {
   ipcMain.handle('show-context-menu', () => { showCustomMenu(); });
   ipcMain.handle('focus-window', () => { if (mainWindowRef) { if (mainWindowRef.isMinimized()) mainWindowRef.restore(); mainWindowRef.focus(); } });
   ipcMain.handle('minimize-window', () => { if (mainWindowRef) mainWindowRef.hide(); });
+  // ★ 追加：マウスイベントの透過を切り替えるハンドラ
+  ipcMain.on('set-ignore-mouse-events', (event, ignore, options) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win) {
+      win.setIgnoreMouseEvents(ignore, options);
+    }
+  });
 
   createWindow();
 });
