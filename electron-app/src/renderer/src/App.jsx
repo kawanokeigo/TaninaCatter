@@ -1,12 +1,17 @@
 import { useState, useEffect, useRef } from 'react';
 
-// ★ 作成したコンポーネントをインポート
 import VirtualM5Controller from './components/VirtualM5Controller';
 import BlacklistModal from './components/BlacklistModal';
 import ProcessDropdown from './components/ProcessDropdown';
 import ConnectBubble from './components/ConnectBubble';
 import Sword from './components/Sword';
 import MainBox from './components/MainBox';
+
+import s1Sound from './assets/s1.mp3';
+import s2Sound from './assets/s2.mp3';
+import s3Sound from './assets/s3.mp3';
+import s4Sound from './assets/s4.mp3';
+const slashSounds = [s1Sound, s2Sound, s3Sound, s4Sound];
 
 const SERVICE_UUID = '4fafc201-1fb5-459e-8fcc-c5c9c331914b';
 const CHARACTERISTIC_UUID = 'beb5483e-36e1-4688-b7f5-ea07361b26a8';
@@ -28,6 +33,9 @@ function App() {
   const targetProcessRef = useRef('');
   const disconnectTimerRef = useRef(null);
   const dropdownRef = useRef(null);
+
+  const [slashData, setSlashData] = useState(null);
+  const [uiPos, setUiPos] = useState({ x: 0, y: 0 });
   const isDraggingRef = useRef(false);
   const dragOffsetRef = useRef({ x: 0, y: 0 });
 
@@ -40,21 +48,33 @@ function App() {
   const browserBlacklistRef = useRef(browserBlacklist);
   browserBlacklistRef.current = browserBlacklist;
 
-  // ★ 起動時にウィンドウ全体を「マウス透過（クリックを裏に通す）」に初期設定する
   useEffect(() => {
-    if (window.api && window.api.setIgnoreMouseEvents) {
-      window.api.setIgnoreMouseEvents(true, { forward: true });
+    window.api.onOpenBlacklist(() => { setIsBlacklistOpen(true); });
+
+    if (window.api.onPlaySlashAnimation) {
+      window.api.onPlaySlashAnimation((imageUri) => {
+        setSlashData(imageUri);
+
+        // ======== ★ 追加：ランダムに音を選んで鳴らす ========
+        // 0 〜 3 の中からランダムな数字を1つ選ぶ
+        const randomIndex = Math.floor(Math.random() * slashSounds.length);
+        const audio = new Audio(slashSounds[randomIndex]);
+        audio.volume = 0.8; // 音量はお好みで（0.0 〜 1.0）
+        audio.play().catch(e => console.error('音声再生エラー:', e));
+        // ====================================================
+
+        // 落ち切るまで待つために 1500 に延長
+        setTimeout(() => setSlashData(null), 1500);
+      });
     }
   }, []);
 
-  // UIにマウスが乗ったときはクリックできるようにする
   const handleMouseEnterUI = () => {
     if (window.api && window.api.setIgnoreMouseEvents) {
       window.api.setIgnoreMouseEvents(false);
     }
   };
 
-  // UIからマウスが外れたら再びクリックを裏にスルーさせる
   const handleMouseLeaveUI = () => {
     if (window.api && window.api.setIgnoreMouseEvents) {
       window.api.setIgnoreMouseEvents(true, { forward: true });
@@ -63,10 +83,6 @@ function App() {
 
   useEffect(() => { localStorage.setItem('processBlacklist', JSON.stringify(processBlacklist)); }, [processBlacklist]);
   useEffect(() => { localStorage.setItem('browserBlacklist', JSON.stringify(browserBlacklist)); }, [browserBlacklist]);
-
-  useEffect(() => {
-    window.api.onOpenBlacklist(() => { setIsBlacklistOpen(true); });
-  }, []);
 
   const fetchProcesses = async () => {
     try {
@@ -111,7 +127,6 @@ function App() {
 
   const connectBLE = async () => {
     if (isConn || m5Mode === '検索中...' || m5Mode === '接続中...') return;
-
     setIsConn(false);
     setM5Mode('検索中...');
 
@@ -128,14 +143,11 @@ function App() {
       await characteristic.startNotifications();
 
       let pingCount = 0;
-
       characteristic.addEventListener('characteristicvaluechanged', (event) => {
         const cmd = new TextDecoder().decode(event.target.value).trim();
         if (['0', '1', '2', 'U', 'D', 'K', 'L'].includes(cmd)) {
           pingCount++;
-          if (pingCount >= 2) {
-            handleCommand(cmd);
-          }
+          if (pingCount >= 2) handleCommand(cmd);
         }
       });
 
@@ -229,11 +241,13 @@ function App() {
   const handleMouseDown = (e) => {
     if (e.button === 0) {
       isDraggingRef.current = true;
-      dragOffsetRef.current = { x: e.screenX - window.screenX, y: e.screenY - window.screenY };
+      dragOffsetRef.current = { x: e.clientX - uiPos.x, y: e.clientY - uiPos.y };
     }
   };
   const handleMouseMove = (e) => {
-    if (isDraggingRef.current) window.moveTo(e.screenX - dragOffsetRef.current.x, e.screenY - dragOffsetRef.current.y);
+    if (isDraggingRef.current) {
+      setUiPos({ x: e.clientX - dragOffsetRef.current.x, y: e.clientY - dragOffsetRef.current.y });
+    }
   };
   const handleMouseUp = () => { isDraggingRef.current = false; };
   const handleContextMenu = (e) => { e.preventDefault(); window.api.showContextMenu(); };
@@ -245,57 +259,89 @@ function App() {
         .hide-scrollbar::-webkit-scrollbar { display: none; }
         .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         .connect-btn:active { transform: scale(0.95); opacity: 0.8; }
+
+        @keyframes slashLeft {
+          0% { transform: translate(0, 0) rotate(0deg); filter: brightness(1); }
+          15% { transform: translate(-10px, 5px) rotate(-1deg); filter: brightness(1.5); }
+          100% { transform: translate(-150px, 120vh) rotate(-15deg); opacity: 0; filter: blur(2px); }
+        }
+        @keyframes slashRight {
+          0% { transform: translate(0, 0) rotate(0deg); filter: brightness(1); }
+          15% { transform: translate(10px, -5px) rotate(1deg); filter: brightness(1.5); }
+          100% { transform: translate(150px, 120vh) rotate(15deg); opacity: 0; filter: blur(2px); }
+        }
+        @keyframes slashFlash {
+          0% { opacity: 0; transform: rotate(25deg) scaleY(0) scaleX(0.1); }
+          20% { opacity: 1; transform: rotate(25deg) scaleY(1.2) scaleX(3); }
+          100% { opacity: 0; transform: rotate(25deg) scaleY(1.5) scaleX(0); }
+        }
       `}</style>
 
-      {/* 外側の背景領域は完全にマウスイベントをスルーする */}
+      {/* ======== ★ 斬撃エフェクトのオーバーレイ ======== */}
+      {slashData && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
+          zIndex: 9999, pointerEvents: 'none',
+          backgroundColor: 'rgba(0, 0, 0, 0.85)',
+        }}>
+          {/* 対象アプリの左上半分（★Flexbox＋imgタグで確実に中央表示） */}
+          <div style={{
+            position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            clipPath: 'polygon(0 0, 70% 0, 30% 100%, 0 100%)',
+            animation: 'slashLeft 1.2s forwards ease-in',
+          }}>
+            <img src={slashData} alt="target" style={{
+              maxWidth: '80%', maxHeight: '80%', objectFit: 'contain',
+              borderRadius: '10px', boxShadow: '0 0 40px rgba(255, 255, 255, 0.3)'
+            }} />
+          </div>
+
+          {/* 対象アプリの右下半分（★Flexbox＋imgタグで確実に中央表示） */}
+          <div style={{
+            position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            clipPath: 'polygon(70% 0, 100% 0, 100% 100%, 30% 100%)',
+            animation: 'slashRight 1.2s forwards ease-in',
+          }}>
+            <img src={slashData} alt="target" style={{
+              maxWidth: '80%', maxHeight: '80%', objectFit: 'contain',
+              borderRadius: '10px', boxShadow: '0 0 40px rgba(255, 255, 255, 0.3)'
+            }} />
+          </div>
+
+          {/* 斬撃の白い光 */}
+          <div style={{
+            position: 'absolute', top: '-50%', left: '48%', width: '4%', height: '200%',
+            backgroundColor: '#fff', boxShadow: '0 0 40px 20px #fff',
+            transform: 'rotate(25deg)', animation: 'slashFlash 0.5s forwards ease-out',
+          }} />
+        </div>
+      )}
+
+      {/* 外側の背景領域 */}
       <div
-        onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp} onContextMenu={handleContextMenu}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
         style={{ position: 'relative', width: '100vw', height: '100vh', display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end', padding: '20px', fontFamily: '"Yu Gothic", "Meiryo", sans-serif' }}
       >
-        {/* ★ この内部のUIエリアにマウスが入ったときだけ、クリックを有効にする */}
         <div
           onMouseEnter={handleMouseEnterUI}
           onMouseLeave={handleMouseLeaveUI}
-          style={{ position: 'relative', width: '260px', height: '170px' }}
+          onMouseDown={handleMouseDown}
+          onContextMenu={handleContextMenu}
+          style={{
+            position: 'relative', width: '260px', height: '170px',
+            transform: `translate(${uiPos.x}px, ${uiPos.y}px)`,
+          }}
         >
-
-          <BlacklistModal
-            isOpen={isBlacklistOpen}
-            onClose={() => setIsBlacklistOpen(false)}
-            targetMode={targetMode}
-            blacklist={targetMode === 'process' ? processBlacklist : browserBlacklist}
-            rawProcessList={rawProcessList}
-            onAdd={addBlacklist}
-            onRemove={removeBlacklist}
-          />
-
-          <ProcessDropdown
-            isVisible={isConn && m5Mode === 'SELECT' && !isBlacklistOpen}
-            processList={processList}
-            selectedProcess={selectedProcess}
-            onSelect={updateSelectedProcess}
-            containerRef={dropdownRef}
-          />
-
-          <ConnectBubble
-            isConn={isConn}
-            onClick={connectBLE}
-            boxColor={getBoxColor()}
-            displayText={getDisplayText()}
-          />
-
+          <BlacklistModal isOpen={isBlacklistOpen} onClose={() => setIsBlacklistOpen(false)} targetMode={targetMode} blacklist={targetMode === 'process' ? processBlacklist : browserBlacklist} rawProcessList={rawProcessList} onAdd={addBlacklist} onRemove={removeBlacklist} />
+          <ProcessDropdown isVisible={isConn && m5Mode === 'SELECT' && !isBlacklistOpen} processList={processList} selectedProcess={selectedProcess} onSelect={updateSelectedProcess} containerRef={dropdownRef} />
+          <ConnectBubble isConn={isConn} onClick={connectBLE} boxColor={getBoxColor()} displayText={getDisplayText()} />
           <Sword isAttacking={isAttacking} />
-
-          <MainBox
-            selectedProcess={selectedProcess}
-            targetMode={targetMode}
-          />
-
-          <VirtualM5Controller
-            onCommand={handleCommand}
-            isConn={isConn}
-          />
-
+          <MainBox selectedProcess={selectedProcess} targetMode={targetMode} />
+          <VirtualM5Controller onCommand={handleCommand} isConn={isConn} />
         </div>
       </div>
     </>

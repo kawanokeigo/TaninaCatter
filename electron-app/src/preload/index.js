@@ -10,6 +10,7 @@ const api = {
   setTargetMode: (mode) => ipcRenderer.invoke('set-target-mode', mode),
   onTargetModeChanged: (callback) => ipcRenderer.on('target-mode-changed', (_, mode) => callback(mode)),
   showContextMenu: () => ipcRenderer.invoke('show-context-menu'),
+  onPlaySlashAnimation: (callback) => ipcRenderer.on('play-slash-animation', (_, imageUri) => callback(imageUri)),
 
   // 裏側からメニューをクリックされた通知を受け取る
   onOpenBlacklist: (callback) => ipcRenderer.on('open-blacklist', () => callback()),
