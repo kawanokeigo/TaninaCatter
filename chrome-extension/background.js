@@ -22,29 +22,48 @@ function connect() {
     }, 20000);
   };
 
-  // Electron側から「このタブをキルして！」と命令が来た時の処理
+  // Electron側からタブの前面化・終了命令が来た時の処理
   ws.onmessage = (event) => {
-  const message = event.data;
+    const message = event.data;
 
-  // ======== ★ ここを追加 ========
-  if (message.startsWith('ACTIVATE_TAB:')) {
-    const tabId = parseInt(message.split(':')[1]);
-    
-    // 1. 指定されたタブをアクティブ（表示状態）にする
-    chrome.tabs.update(tabId, { active: true }, (tab) => {
-      if (tab && tab.windowId) {
-        // 2. そのタブが含まれるChromeのウィンドウ自体を最前面に引っ張り出す
-        chrome.windows.update(tab.windowId, { focused: true });
-      }
-    });
-  } 
-  // ===============================
-  
-  else if (message.startsWith('KILL_TAB:')) {
-    const tabId = parseInt(message.split(':')[1]);
-    chrome.tabs.remove(tabId);
-  }
-};
+    if (message.startsWith('ACTIVATE_TAB:')) {
+      const [, rawTabId, requestId] = message.split(':');
+      const tabId = Number.parseInt(rawTabId, 10);
+
+      const acknowledge = (ok) => {
+        if (!requestId || !ws || ws.readyState !== WebSocket.OPEN) return;
+        ws.send(JSON.stringify({ type: 'TAB_ACTIVATED', requestId, tabId, ok }));
+      };
+
+      chrome.tabs.update(tabId, { active: true }, (tab) => {
+        const tabError = chrome.runtime.lastError;
+        if (tabError || !tab || tab.windowId == null) {
+          acknowledge(false);
+          return;
+        }
+
+        chrome.windows.update(tab.windowId, { focused: true }, () => {
+          const windowError = chrome.runtime.lastError;
+          acknowledge(!windowError);
+        });
+      });
+    }
+    else if (message.startsWith('KILL_TAB:')) {
+      const [, rawTabId, requestId] = message.split(':');
+      const tabId = Number.parseInt(rawTabId, 10);
+      chrome.tabs.remove(tabId, () => {
+        const removeError = chrome.runtime.lastError;
+        if (requestId && ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'TAB_KILLED',
+            requestId,
+            tabId,
+            ok: !removeError
+          }));
+        }
+      });
+    }
+  };
 
   ws.onclose = () => {
     console.log('❌ 切断されました。3秒後に再接続します...');
