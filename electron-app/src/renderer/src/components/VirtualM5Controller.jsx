@@ -7,7 +7,7 @@ export default function VirtualM5Controller({ onCommand, isConn }) {
     <div style={{
       position: 'fixed',
       bottom: '-4px',
-      left: '-170px',
+      left: '-180px',
       zIndex: 9999,
       fontFamily: 'sans-serif',
       fontSize: '11px'

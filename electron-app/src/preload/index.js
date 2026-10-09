@@ -17,7 +17,15 @@ const api = {
   },
   showContextMenu: () => ipcRenderer.invoke('show-context-menu'),
   onPlaySlashAnimation: (callback) => {
-    const listener = (_, image) => callback(image)
+    const listener = (_, payload) => {
+      const image = payload && Object.prototype.hasOwnProperty.call(payload, 'image') ? payload.image : payload
+      const imageUri = typeof image === 'string'
+        ? image
+        : image?.bytes?.length
+          ? `data:${image.mimeType || 'image/jpeg'};base64,${Buffer.from(image.bytes).toString('base64')}`
+          : null
+      callback({ imageUri, targetName: payload?.targetName || 'TARGET' })
+    }
     ipcRenderer.on('play-slash-animation', listener)
     return () => ipcRenderer.removeListener('play-slash-animation', listener)
   },
