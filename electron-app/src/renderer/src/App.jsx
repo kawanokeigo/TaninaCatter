@@ -30,18 +30,9 @@ function App() {
   const [rawProcessList, setRawProcessList] = useState([]);
 
   const processListRef = useRef([]);
-  const targetDetailsRef = useRef(new Map());
   const targetProcessRef = useRef('');
-  const selectedTargetRef = useRef(null);
-  const processFetchInFlightRef = useRef(false);
   const disconnectTimerRef = useRef(null);
   const dropdownRef = useRef(null);
-  const killInFlightRef = useRef(false);
-  const attackTimerRef = useRef(null);
-  const slashTimerRef = useRef(null);
-  const slashObjectUrlRef = useRef(null);
-  const slashAudioRef = useRef([]);
-  const slashAnimationIdRef = useRef(0);
 
   const [slashData, setSlashData] = useState(null);
   const [uiPos, setUiPos] = useState({ x: 0, y: 0 });
@@ -49,96 +40,51 @@ function App() {
   const dragOffsetRef = useRef({ x: 0, y: 0 });
 
   const targetModeRef = useRef(targetMode);
+  targetModeRef.current = targetMode;
+
   const processBlacklistRef = useRef(processBlacklist);
+  processBlacklistRef.current = processBlacklist;
+
   const browserBlacklistRef = useRef(browserBlacklist);
-
-  const getTargetDescriptor = (name) => {
-    if (selectedTargetRef.current?.name === name) return selectedTargetRef.current;
-    return targetDetailsRef.current.get(name) || { name };
-  };
-
-  const clearKillPreparation = () => {
-    if (window.api.clearPreparedKill) {
-      window.api.clearPreparedKill().catch(error => console.error('事前キャプチャ破棄エラー:', error));
-    }
-  };
-
-  const playSlashSound = () => {
-    const players = slashAudioRef.current;
-    if (players.length === 0) return;
-    const audio = players[Math.floor(Math.random() * players.length)];
-    audio.currentTime = 0;
-    audio.play().catch(error => console.error('音声再生エラー:', error));
-  };
-
-  const createImageUrl = (image) => {
-    if (typeof image === 'string') return image;
-
-    let bytes = image?.bytes;
-    if (bytes?.type === 'Buffer' && Array.isArray(bytes.data)) bytes = bytes.data;
-    if (Array.isArray(bytes)) bytes = Uint8Array.from(bytes);
-    else if (bytes instanceof ArrayBuffer) bytes = new Uint8Array(bytes);
-    else if (ArrayBuffer.isView(bytes)) bytes = new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    else return null;
-
-    const mimeType = image.mimeType || 'image/jpeg';
-    if (mimeType === 'image/jpeg' && (bytes.length < 3 || bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes[2] !== 0xff)) return null;
-
-    const blob = new Blob([bytes], { type: mimeType });
-    return URL.createObjectURL(blob);
-  };
+  browserBlacklistRef.current = browserBlacklist;
 
   useEffect(() => {
-    const removeOpenBlacklistListener = window.api.onOpenBlacklist(
-      () => { setIsBlacklistOpen(true); }
-    );
-
-    slashAudioRef.current = slashSounds.map(source => {
-      const audio = new Audio(source);
-      audio.preload = 'auto';
-      audio.volume = 0.8;
-      audio.load();
-      return audio;
-    });
-
-    let removeSlashListener;
-    if (window.api.onPlaySlashAnimation) {
-      removeSlashListener = window.api.onPlaySlashAnimation((payload) => {
-        const hasImageField = payload && Object.prototype.hasOwnProperty.call(payload, 'image');
-        const imageUri = createImageUrl(hasImageField ? payload.image : payload);
-        const targetName = payload?.targetName || 'TARGET';
-
-        if (slashTimerRef.current) clearTimeout(slashTimerRef.current);
-        if (slashObjectUrlRef.current) URL.revokeObjectURL(slashObjectUrlRef.current);
-        slashObjectUrlRef.current = imageUri?.startsWith('blob:') ? imageUri : null;
-        setSlashData({ imageUri, targetName, id: ++slashAnimationIdRef.current });
-
-        slashTimerRef.current = setTimeout(() => {
-          setSlashData(null);
-          if (imageUri && slashObjectUrlRef.current === imageUri) {
-            URL.revokeObjectURL(imageUri);
-            slashObjectUrlRef.current = null;
-          }
+    let active = true;
+    let animationId = 0;
+    let animationTimer = null;
+    const unsubscribeBlacklist = window.api.onOpenBlacklist(() => { setIsBlacklistOpen(true); });
+    const unsubscribeSlash = window.api.onPlaySlashAnimation?.(({ imageUri, targetName }) => {
+      const currentId = ++animationId;
+      clearTimeout(animationTimer);
+      setSlashData(null);
+      const startAnimation = (loadedUri) => {
+        if (!active || currentId !== animationId) return;
+        setSlashData({ imageUri: loadedUri, targetName, id: currentId });
+        const randomIndex = Math.floor(Math.random() * slashSounds.length);
+        const audio = new Audio(slashSounds[randomIndex]);
+        audio.volume = 0.8;
+        audio.play().catch(e => console.error('音声再生エラー:', e));
+        animationTimer = setTimeout(() => {
+          if (currentId === animationId) setSlashData(null);
         }, 1500);
-      });
-    }
-
-    return () => {
-      if (removeOpenBlacklistListener) removeOpenBlacklistListener();
-      if (removeSlashListener) removeSlashListener();
-      if (slashTimerRef.current) clearTimeout(slashTimerRef.current);
-      if (attackTimerRef.current) clearTimeout(attackTimerRef.current);
-      if (slashObjectUrlRef.current) URL.revokeObjectURL(slashObjectUrlRef.current);
-      for (const audio of slashAudioRef.current) {
-        audio.pause();
-        audio.src = '';
+      };
+      if (!imageUri) {
+        startAnimation(null);
+        return;
       }
+      const image = new Image();
+      image.onload = () => startAnimation(imageUri);
+      image.onerror = () => startAnimation(null);
+      image.src = imageUri;
+    });
+    return () => {
+      active = false;
+      ++animationId;
+      clearTimeout(animationTimer);
+      unsubscribeBlacklist?.();
+      unsubscribeSlash?.();
     };
   }, []);
-
-  useEffect(() => { targetModeRef.current = targetMode; }, [targetMode]);
-  useEffect(() => { processBlacklistRef.current = processBlacklist; }, [processBlacklist]);
-  useEffect(() => { browserBlacklistRef.current = browserBlacklist; }, [browserBlacklist]);
 
   const handleMouseEnterUI = () => {
     if (window.api && window.api.setIgnoreMouseEvents) {
@@ -156,21 +102,9 @@ function App() {
   useEffect(() => { localStorage.setItem('browserBlacklist', JSON.stringify(browserBlacklist)); }, [browserBlacklist]);
 
   const fetchProcesses = async () => {
-    if (processFetchInFlightRef.current) return;
-    processFetchInFlightRef.current = true;
-    const requestedMode = targetModeRef.current;
-
     try {
       const processes = await window.api.getProcesses();
-      if (requestedMode !== targetModeRef.current) return;
-
-      const uniqueTargets = new Map();
-      for (const process of processes) {
-        if (!uniqueTargets.has(process.name)) uniqueTargets.set(process.name, process);
-      }
-      targetDetailsRef.current = uniqueTargets;
-
-      const uniqueNames = Array.from(uniqueTargets.keys());
+      const uniqueNames = Array.from(new Set(processes.map(p => p.name)));
       setRawProcessList(uniqueNames);
 
       const activeBlacklist = targetModeRef.current === 'process' ? processBlacklistRef.current : browserBlacklistRef.current;
@@ -179,49 +113,20 @@ function App() {
       setProcessList(filteredNames);
       processListRef.current = filteredNames;
 
-      const selectedTarget = selectedTargetRef.current;
-      let selectedStillExists = true;
-      if (selectedTarget && requestedMode === 'browser') {
-        selectedStillExists = processes.some(process =>
-          process.id === selectedTarget.id
-          && process.connectionId === selectedTarget.connectionId
-        );
-      }
-      else if (selectedTarget) {
-        const liveProcessGroup = uniqueTargets.get(selectedTarget.name);
-        selectedStillExists = Boolean(liveProcessGroup);
-        if (liveProcessGroup) selectedTargetRef.current = liveProcessGroup;
-      }
-
-      if (activeBlacklist.includes(targetProcessRef.current) || !selectedStillExists) {
-        selectedTargetRef.current = null;
-        targetProcessRef.current = '';
-        setSelectedProcess('');
-        clearKillPreparation();
-      }
-    } catch (error) {
-      console.error('プロセス取得エラー:', error);
-    } finally {
-      processFetchInFlightRef.current = false;
-      if (requestedMode !== targetModeRef.current) void fetchProcesses();
-    }
+      if (activeBlacklist.includes(targetProcessRef.current)) updateSelectedProcess('');
+    } catch (error) { console.error('プロセス取得エラー:', error); }
   };
 
   useEffect(() => {
     window.api.getCurrentMode().then(mode => setTargetMode(mode));
-    const removeTargetModeListener = window.api.onTargetModeChanged((mode) => {
+    window.api.onTargetModeChanged((mode) => {
       setTargetMode(mode); targetModeRef.current = mode;
-      selectedTargetRef.current = null;
-      targetProcessRef.current = '';
-      setSelectedProcess(''); setIsBlacklistOpen(false); clearKillPreparation(); fetchProcesses();
+      setSelectedProcess(''); setIsBlacklistOpen(false); fetchProcesses();
     });
 
     fetchProcesses();
     const interval = setInterval(fetchProcesses, 3000);
-    return () => {
-      clearInterval(interval);
-      if (removeTargetModeListener) removeTargetModeListener();
-    };
+    return () => clearInterval(interval);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { fetchProcesses(); }, [processBlacklist, browserBlacklist]);
@@ -287,15 +192,9 @@ function App() {
     const currentTarget = targetProcessRef.current;
     const currentIndex = fullList.indexOf(currentTarget);
 
-    if (command === '0') { setM5Mode('SAFE'); clearKillPreparation(); }
-    else if (command === '1') { setM5Mode('SELECT'); clearKillPreparation(); }
-    else if (command === '2') {
-      setM5Mode('KILL');
-      if (currentTarget && window.api.prepareKill) {
-        window.api.prepareKill(getTargetDescriptor(currentTarget))
-          .catch(error => console.error('事前キャプチャ開始エラー:', error));
-      }
-    }
+    if (command === '0') setM5Mode('SAFE');
+    else if (command === '1') setM5Mode('SELECT');
+    else if (command === '2') setM5Mode('KILL');
     else if (command === 'U') { if (currentIndex > 0) updateSelectedProcess(fullList[currentIndex - 1]); }
     else if (command === 'D') { if (currentIndex < fullList.length - 1) updateSelectedProcess(fullList[currentIndex + 1]); }
     else if (command === 'K') { if (currentTarget) executeKill(currentTarget); }
@@ -310,34 +209,24 @@ function App() {
   const handleDisconnect = () => {
     setIsConn(false);
     setM5Mode('未接続');
-    clearKillPreparation();
     if (disconnectTimerRef.current) clearTimeout(disconnectTimerRef.current);
   };
 
   const updateSelectedProcess = (name) => {
-    clearKillPreparation();
-    selectedTargetRef.current = name ? (targetDetailsRef.current.get(name) || { name }) : null;
     setSelectedProcess(name); targetProcessRef.current = name;
+    const preparation = name ? window.api.prepareKill?.(name) : window.api.clearPreparedKill?.();
+    preparation?.catch(error => console.error('事前キャプチャエラー:', error));
   };
 
   const executeKill = async (processName) => {
-    if (!processName || killInFlightRef.current) return;
-    killInFlightRef.current = true;
+    if (!processName) return;
     setIsAttacking(true);
-    playSlashSound();
-    if (attackTimerRef.current) clearTimeout(attackTimerRef.current);
-    attackTimerRef.current = setTimeout(() => { setIsAttacking(false); }, 300);
+    setTimeout(() => { setIsAttacking(false); }, 300);
 
     try {
-      const result = await window.api.killProcess(getTargetDescriptor(processName));
-      if (result?.success) updateSelectedProcess('');
-      else console.error('タスクキル失敗:', result);
-      fetchProcesses();
-    } catch (error) {
-      console.error('タスクキル失敗:', error);
-    } finally {
-      killInFlightRef.current = false;
-    }
+      await window.api.killProcess(processName);
+      updateSelectedProcess(''); fetchProcesses();
+    } catch (error) { console.error('タスクキル失敗:', error); }
   };
 
   const addBlacklist = (name) => {
@@ -389,10 +278,7 @@ function App() {
       onError={() => {
         const failedUri = slashData.imageUri;
         setSlashData(current => current?.imageUri === failedUri ? { ...current, imageUri: null } : current);
-        if (slashObjectUrlRef.current === failedUri) {
-          URL.revokeObjectURL(failedUri);
-          slashObjectUrlRef.current = null;
-        }
+
       }}
       style={{
         maxWidth: '80%', maxHeight: '80%', objectFit: 'contain',
@@ -501,7 +387,7 @@ function App() {
 
 
           {/* これデバッグ用の仮想m5出してるやつやからm5あるならコメントアウトしてね */}
-          {/* <VirtualM5Controller onCommand={handleCommand} isConn={isConn} /> */}
+          <VirtualM5Controller onCommand={handleCommand} isConn={isConn} />
 
 
         </div>
