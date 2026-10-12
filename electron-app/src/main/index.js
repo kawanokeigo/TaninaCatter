@@ -19,6 +19,9 @@ const isSystemProcess = (name) => name ? systemProcesses.includes(name.toLowerCa
 
 let mainWindowRef = null;
 let tray = null;
+// DEBUG-M5 ここから: 完成後は同じ目印の範囲をコメントアウトして削除できます。
+let debugMode = false;
+// DEBUG-M5 ここまで
 let targetMode = 'process';
 let currentTabs = [];
 let chromeWs = null;
@@ -267,6 +270,18 @@ function updateTrayMenu() {
     { label: '対象: PCのプロセス (.exe)', type: 'radio', checked: targetMode === 'process', click: () => { targetMode = 'process'; updateTrayMenu(); notifyRendererMode(); } },
     { label: '対象: Chromeブラウザのタブ', type: 'radio', checked: targetMode === 'browser', click: () => { targetMode = 'browser'; updateTrayMenu(); notifyRendererMode(); } },
     { type: 'separator' },
+    // DEBUG-M5 START: 仮想M5の表示切り替え。完成後はこの項目をコメントアウト。
+    {
+      label: 'デバッグモード（仮想M5）', type: 'checkbox', checked: debugMode,
+      click: (menuItem) => {
+        debugMode = menuItem.checked;
+        updateTrayMenu();
+        if (mainWindowRef && !mainWindowRef.isDestroyed()) {
+          mainWindowRef.webContents.send('debug-mode-changed', debugMode);
+        }
+      }
+    },
+    // DEBUG-M5 END
     { label: 'アプリを表示', click: () => { if(mainWindowRef) mainWindowRef.show() } },
     { label: '完全終了', click: () => { app.quit() } }
   ]);
@@ -392,7 +407,7 @@ app.whenReady().then(() => {
   if (!trayIcon.isEmpty()) trayIcon = trayIcon.resize({ width: 24, height: 24 });
   tray = new Tray(trayIcon.isEmpty() ? nativeImage.createEmpty() : trayIcon);
   updateTrayMenu();
-  tray.on('click', () => { if (mainWindowRef) mainWindowRef.show(); });
+  tray.on('click', () => { tray.popUpContextMenu(); });
 
   createWindow();
 
@@ -435,6 +450,9 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle('get-current-mode', () => targetMode);
+  // DEBUG-M5 START: 起動時・画面再読み込み時の状態取得。完成後はコメントアウト。
+  ipcMain.handle('get-debug-mode', () => debugMode);
+  // DEBUG-M5 END
   ipcMain.handle('set-target-mode', (event, mode) => {
     targetMode = mode;
     clearPreparedCapture();
