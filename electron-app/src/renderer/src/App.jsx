@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 
+// DEBUG-M5 ここから: 完成後はコメントアウト。
 import VirtualM5Controller from './components/VirtualM5Controller';
+// DEBUG-M5 ここまで
+
 import BlacklistModal from './components/BlacklistModal';
 import ProcessDropdown from './components/ProcessDropdown';
 import ConnectBubble from './components/ConnectBubble';
@@ -17,6 +20,24 @@ const SERVICE_UUID = '4fafc201-1fb5-459e-8fcc-c5c9c331914b';
 const CHARACTERISTIC_UUID = 'beb5483e-36e1-4688-b7f5-ea07361b26a8';
 
 function App() {
+  // DEBUG-M5 START: トレイのチェック状態に仮想M5の表示を合わせる。完成後はコメントアウト。
+  const [debugMode, setDebugMode] = useState(false);
+  useEffect(() => {
+    let active = true;
+    let receivedUpdate = false;
+    const unsubscribe = window.api.onDebugModeChanged(enabled => {
+      receivedUpdate = true;
+      if (active) setDebugMode(enabled);
+    });
+    window.api.getDebugMode().then(enabled => {
+      if (active && !receivedUpdate) setDebugMode(enabled);
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, []);
+  // DEBUG-M5 END
   const [processList, setProcessList] = useState([]);
   const [selectedProcess, setSelectedProcess] = useState('');
   const [isConn, setIsConn] = useState(false);
@@ -386,8 +407,9 @@ function App() {
           <MainBox selectedProcess={selectedProcess} targetMode={targetMode} />
 
 
-          {/* これデバッグ用の仮想m5出してるやつやからm5あるならコメントアウトしてね */}
-          <VirtualM5Controller onCommand={handleCommand} isConn={isConn} />
+          {/* DEBUG-M5 START: 完成後は次の表示行をJSXコメントで囲んで無効化。 */}
+          {debugMode && <VirtualM5Controller onCommand={handleCommand} isConn={isConn} />}
+          {/* DEBUG-M5 END */}
 
 
         </div>

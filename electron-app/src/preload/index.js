@@ -9,6 +9,14 @@ const api = {
   focusWindow: () => ipcRenderer.invoke('focus-window'),
   minimizeWindow: () => ipcRenderer.invoke('minimize-window'),
   getCurrentMode: () => ipcRenderer.invoke('get-current-mode'),
+  // DEBUG-M5 ここから: 仮想M5の状態取得と変更通知。完成後はコメントアウト。
+  getDebugMode: () => ipcRenderer.invoke('get-debug-mode'),
+  onDebugModeChanged: (callback) => {
+    const listener = (_, enabled) => callback(enabled)
+    ipcRenderer.on('debug-mode-changed', listener)
+    return () => ipcRenderer.removeListener('debug-mode-changed', listener)
+  },
+  // DEBUG-M5 ここまで
   setTargetMode: (mode) => ipcRenderer.invoke('set-target-mode', mode),
   onTargetModeChanged: (callback) => {
     const listener = (_, mode) => callback(mode)
