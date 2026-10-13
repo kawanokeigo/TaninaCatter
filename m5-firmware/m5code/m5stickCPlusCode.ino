@@ -1,7 +1,7 @@
 // M5StickC Plus v1.1 (ESP32-PICO-D4), not StickS3 or Plus2.
 // Arduino IDE board: M5StickC Plus. Install M5Unified and M5GFX.
 // BLEDevice/BLEServer/BLE2902 are supplied by the ESP32 Arduino board package.
-// Keep the screen face-up and still to arm SELECT.
+// Hold still for 200ms to arm SELECT; that pose becomes the neutral tilt.
 // A short press: SAFE -> SELECT -> KILL. A hold >=800ms: L. B: restart.
 
 #include <Arduino.h>
@@ -22,10 +22,10 @@ namespace {
 constexpr float DEG_TO_RAD_F = 0.01745329251994329577f;
 constexpr float RAD_TO_DEG_F = 57.29577951308232088f;
 // IMU filter and stability thresholds.
-constexpr float ACCEL_STATIONARY_TOLERANCE_G = 0.08f;
-constexpr float ACCEL_STATIONARY_EXIT_G = 0.12f;
-constexpr float GYRO_STATIONARY_THRESHOLD_DPS = 6.0f;
-constexpr float GYRO_STATIONARY_EXIT_DPS = 10.0f;
+constexpr float ACCEL_STATIONARY_TOLERANCE_G = 0.20f;
+constexpr float ACCEL_STATIONARY_EXIT_G = 0.30f;
+constexpr float GYRO_STATIONARY_THRESHOLD_DPS = 15.0f;
+constexpr float GYRO_STATIONARY_EXIT_DPS = 25.0f;
 constexpr float ACCEL_REJECTION_RANGE_G = 0.20f;
 constexpr float GYRO_ACCEL_REJECTION_DPS = 120.0f;
 constexpr float MAHONY_KP_MOVING = 0.35f;
@@ -33,14 +33,14 @@ constexpr float MAHONY_KP_STATIONARY = 3.0f;
 constexpr float GYRO_BIAS_TAU_SECONDS = 8.0f;
 constexpr float TILT_LPF_TAU_SECONDS = 0.08f;
 // Gesture thresholds. Enter and release values differ to prevent chatter.
-constexpr float LEVEL_ENTER_DEG = 3.0f;
-constexpr float LEVEL_EXIT_DEG = 6.0f;
+constexpr float LEVEL_ENTER_DEG = 10.0f;
+constexpr float LEVEL_EXIT_DEG = 15.0f;
 constexpr float SELECT_ENTER_DEG = 15.0f;
 constexpr float SELECT_RELEASE_DEG = 8.0f;
 constexpr float CROSS_TILT_LIMIT_DEG = 35.0f;
 constexpr float KILL_ACCEL_THRESHOLD_G = 2.5f;
 constexpr float NAV_DIRECTION_SIGN = 1.0f;
-constexpr uint32_t STATIONARY_HOLD_MS = 350;
+constexpr uint32_t STATIONARY_HOLD_MS = 200;
 constexpr uint32_t SELECT_REPEAT_MS = 400;
 constexpr uint32_t KILL_COOLDOWN_MS = 600;
 constexpr uint32_t KILL_TRANSITION_MS = 200;
@@ -84,6 +84,8 @@ OrientationState orientation;
 int currentMode = 0;
 int navDirection = 0;
 bool selectArmed = false;
+float selectNeutralNavDeg = 0.0f;
+float selectNeutralCrossDeg = 0.0f;
 bool killTransitionPending = false;
 volatile bool screenDirty = true;
 uint32_t selectNotBeforeMs = 0;
@@ -178,7 +180,9 @@ void updateEstimatedTilts(float dtSeconds, bool forceImmediate) {
                  - orientation.q2 * orientation.q2 + orientation.q3 * orientation.q3;
   const float rawNavTilt = asinf(clampUnit(gy)) * RAD_TO_DEG_F;
   const float rawCrossTilt = asinf(clampUnit(-gx)) * RAD_TO_DEG_F;
-  orientation.absoluteTiltDeg = acosf(clampUnit(gz)) * RAD_TO_DEG_F;
+  // Horizontal means the Z axis is vertical, irrespective of its sign.
+  // A negative face-up Z value must not be interpreted as a 180-degree tilt.
+  orientation.absoluteTiltDeg = acosf(clampUnit(fabsf(gz))) * RAD_TO_DEG_F;
   if (forceImmediate || !orientation.anglesInitialized) {
     orientation.navTiltDeg = rawNavTilt;
     orientation.crossTiltDeg = rawCrossTilt;
@@ -388,7 +392,7 @@ void drawScreenIfNeeded(uint32_t nowMs) {
       M5.Display.println("READY");
     } else {
       M5.Display.setTextColor(YELLOW);
-      M5.Display.println("LEVEL...");
+      M5.Display.println("HOLD...");
       M5.Display.println("Keep still");
     }
   } else if (currentMode == 2) {
@@ -399,8 +403,19 @@ void drawScreenIfNeeded(uint32_t nowMs) {
 }
 void handleSelectMode(uint32_t nowMs) {
   if (!selectArmed) {
+    // If acquisition still fails, the serial monitor identifies the failing gate.
+    static uint32_t lastDiagnosticMs = 0;
+    if (elapsed(nowMs, lastDiagnosticMs, 1000)) {
+      lastDiagnosticMs = nowMs;
+      Serial.printf("SELECT wait: accel=%.3fg tilt=%.1f stationary=%d level=%d reseed=%d gyroBias=(%.2f,%.2f,%.2f)\n",
+        orientation.accelMagnitude, orientation.absoluteTiltDeg,
+        orientation.stationary, orientation.level, orientation.reseedPending,
+        orientation.gyroBiasX, orientation.gyroBiasY, orientation.gyroBiasZ);
+    }
     if (deadlineReached(nowMs, selectNotBeforeMs) && orientation.stationary &&
-        orientation.level && !orientation.reseedPending) {
+        orientation.initialized && !orientation.reseedPending) {
+      selectNeutralNavDeg = orientation.navTiltDeg;
+      selectNeutralCrossDeg = orientation.crossTiltDeg;
       selectArmed = true;
       navDirection = 0;
       lastNavCommandTimeMs = nowMs;
@@ -408,8 +423,12 @@ void handleSelectMode(uint32_t nowMs) {
     }
     return;
   }
-  if (!orientation.stationary || fabsf(orientation.crossTiltDeg) > CROSS_TILT_LIMIT_DEG) return;
-  const float navTilt = orientation.navTiltDeg * NAV_DIRECTION_SIGN;
+  // Stationarity is only required when acquiring the neutral pose.
+  // Navigation must continue while the user is tilting the device.
+  if (!orientation.hasSample ||
+      static_cast<uint32_t>(micros() - orientation.lastSampleUs) > 100000U) return;
+  if (fabsf(orientation.crossTiltDeg - selectNeutralCrossDeg) > CROSS_TILT_LIMIT_DEG) return;
+  const float navTilt = (orientation.navTiltDeg - selectNeutralNavDeg) * NAV_DIRECTION_SIGN;
   int nextDirection = navDirection;
   if (navTilt >= SELECT_ENTER_DEG) nextDirection = 1;
   else if (navTilt <= -SELECT_ENTER_DEG) nextDirection = -1;
